@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"google.golang.org/grpc/grpclog"
 )
@@ -13,7 +12,6 @@ import (
 type logResponseWriter struct {
 	http.ResponseWriter
 	statusCode int
-	body       bytes.Buffer
 }
 
 func (rsp *logResponseWriter) WriteHeader(code int) {
@@ -21,27 +19,22 @@ func (rsp *logResponseWriter) WriteHeader(code int) {
 	rsp.ResponseWriter.WriteHeader(code)
 }
 
-func (rsp *logResponseWriter) Write(b []byte) (int, error) {
-	rsp.body.Write(b) // Ghi lại response body
-	return rsp.ResponseWriter.Write(b)
-}
-
+// Unwrap returns the original http.ResponseWriter. This is necessary
+// to expose Flush() and Push() on the underlying response writer.
 func (rsp *logResponseWriter) Unwrap() http.ResponseWriter {
 	return rsp.ResponseWriter
 }
 
 func newLogResponseWriter(w http.ResponseWriter) *logResponseWriter {
-	return &logResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+	return &logResponseWriter{w, http.StatusOK}
 }
 
-// LogRequestBody logs the request and response details including method, URI, status code, and duration.
+// logRequestBody logs the request body when the response status code is not 200.
 func LogRequestBody(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		startTime := time.Now()
-
 		lw := newLogResponseWriter(w)
 
-		// Đọc và lưu lại request body
+		// Note that buffering the entire request body could consume a lot of memory.
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to read body: %v", err), http.StatusBadRequest)
@@ -50,32 +43,10 @@ func LogRequestBody(h http.Handler) http.Handler {
 		clonedR := r.Clone(r.Context())
 		clonedR.Body = io.NopCloser(bytes.NewReader(body))
 
-		// Gọi handler tiếp theo
 		h.ServeHTTP(lw, clonedR)
 
-		duration := time.Since(startTime)
-		requestSize := len(body)
-		responseSize := lw.body.Len()
-
-		// Lấy địa chỉ IP của client
-		ip := r.RemoteAddr
-		if ip == "" {
-			if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-				ip = forwarded
-			} else {
-				ip = "unknown"
-			}
-		}
-
-		// Log thông tin chi tiết
-		logMessage := fmt.Sprintf("Method: %s, URI: %s, Status: %d, Duration: %v, RequestSize: %dB, ResponseSize: %dB, IP: %s",
-			r.Method, r.RequestURI, lw.statusCode, duration, requestSize, responseSize, ip)
-
-		// Log thông tin lỗi nếu status code không phải 2xx
-		if lw.statusCode != http.StatusOK {
-			grpclog.Errorf("%s, Request Body: %s, Response Body: %s", logMessage, string(body), lw.body.String())
-		} else if lw.statusCode == http.StatusOK {
-			grpclog.Infof("%s, Request Body: %s, Response Body: %s", logMessage, string(body), lw.body.String())
+		if lw.statusCode == http.StatusOK {
+			grpclog.Errorf("http error %+v request body %+v", lw.statusCode, string(body))
 		}
 	})
 }

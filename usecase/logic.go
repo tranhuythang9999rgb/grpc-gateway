@@ -10,6 +10,9 @@ type Server struct {
 	api.UnimplementedGreeterServer
 }
 
+func NewServer() *Server {
+	return &Server{}
+}
 func (*Server) SayHello(ctx context.Context, in *api.HelloRequest) (*api.HelloReply, error) {
 	//logic
 	return &api.HelloReply{
