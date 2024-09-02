@@ -45,16 +45,18 @@ func main() {
 
 	// Create a new ServeMux for the gRPC-Gateway
 	gwmux := runtime.NewServeMux()
+
 	// Register the Greeter service with the gRPC-Gateway
 	err = api.RegisterGreeterHandler(context.Background(), gwmux, conn)
 	if err != nil {
 		log.Fatalln("Failed to register gateway:", err)
 	}
+	loggedMux := api.LogRequestBody(gwmux)
 
 	// Create a new HTTP server for the gRPC-Gateway
 	gwServer := &http.Server{
 		Addr:    ":8090",
-		Handler: gwmux,
+		Handler: loggedMux,
 	}
 
 	log.Println("Serving gRPC-Gateway on http://0.0.0.0:8090")

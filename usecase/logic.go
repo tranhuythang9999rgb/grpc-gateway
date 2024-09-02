@@ -7,7 +7,7 @@ import (
 )
 
 type Server struct {
-	*api.UnimplementedGreeterServer
+	api.UnimplementedGreeterServer
 }
 
 func (*Server) SayHello(ctx context.Context, in *api.HelloRequest) (*api.HelloReply, error) {
